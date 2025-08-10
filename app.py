@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+import numpy as np
+from pandas.io.formats.info import frame_examples_sub
 
 st.set_page_config(
     page_title='Dashboard de Salários na Área de Dados',
@@ -37,7 +40,7 @@ df_filtrado = df[
 ]
 
 st.title('📊 Dashboard de Análise de Salários na Área de Dados')
-st.markdown('Explore os dados salariais na área de dados nos últimos anos. Utilize os filtros à esquerda para refinas a sua análise.')
+st.markdown('Explore os dados salariais na área de dados nos últimos anos. Utilize os filtros à esquerda para refinar a sua análise.')
 
 st.subheader('Métricas gerais (Salário anual em USD)')
 
@@ -63,31 +66,93 @@ col_graf1, col_graf2 = st.columns(2)
 
 with col_graf1:
     if not df_filtrado.empty:
-        top_cargos = df_filtrado.groupby('cargo')['usd'].mean().nlargest(10).sort_values(ascending=True).reset_index()
-        grafico_cargos = px.bar(
-            top_cargos,
-            x='usd',
-            y='cargo',
-            orientation='h',
-            title='Top 10 cargos por salário médio',
-            labels={'usd': 'Média salarial anual (USD)', 'cargo': ''}
+        top_cargos = (
+            df_filtrado.groupby('cargo')['usd']
+            .mean()
+            .nlargest(10)
+            .sort_values(ascending=True)
+            .reset_index()
         )
-        grafico_cargos.update_layout(title_x=0.1, yaxis={'categoryorder': 'total ascending'})
-        st.plotly_chart(grafico_cargos, use_container_width=True)
+
+        colorscale = 'YlOrRd'
+        height = max(400, 30 * len(top_cargos))
+        max_x = top_cargos['usd'].max()
+        padding_factor = 0.12
+        x_limit = max_x * (1 + padding_factor)
+
+        fig = go.Figure(
+            go.Bar(
+                x=top_cargos['usd'],
+                y=top_cargos['cargo'],
+                orientation='h',
+                marker=dict(
+                    color=top_cargos['usd'],
+                    colorscale=colorscale,
+                    reversescale=False,
+                    line=dict(width=0.5, color='black')),
+                text=top_cargos['usd'],
+                texttemplate='$%{text:,.2f}',
+                textposition='outside',
+                hovertemplate='%{y}: $%{x:,.2f}<extra></extra>',
+                cliponaxis=False
+            )
+        )
+
+        fig.update_layout(
+            title='Top 10 cargos por salário médio',
+            title_x=0.1,
+            height=height,
+            margin=dict(l=160, r=180, t=60, b=40),
+            yaxis=dict(categoryorder='total ascending'),
+            showlegend=False,
+        )
+
+        fig.update_xaxes(range=[0, x_limit], tickformat=',.0f')
+
+        st.plotly_chart(fig, use_container_width=True)
     else:
         st.warning('Nenhum dado para exibir no gráfico de cargos.')
 
 with col_graf2:
     if not df_filtrado.empty:
-        grafico_hist = px.histogram(
-            df_filtrado,
-            x='usd',
-            nbins=30,
-            title='Distribuição de salários anuais',
-            labels={'usd': 'Faixa salarial (USD)', 'count': ''}
+        vals = df_filtrado['usd'].dropna().to_numpy()
+        nbins = 30
+        counts, bin_edges = np.histogram(vals, bins=nbins)
+
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        widths = bin_edges[1:] - bin_edges[:-1]
+
+        colorscale = 'YlOrRd'
+
+        fig_hist = go.Figure(
+            go.Bar(
+                x=bin_centers,
+                y=counts,
+                width=widths,
+                marker=dict(
+                    color=bin_centers,
+                    colorscale=colorscale,
+                    colorbar=dict(title='USD'),
+                    line=dict(width=0.3, color='black')
+                ),
+                text=counts,
+                texttemplate='%{text}',
+                textposition='outside',
+                hovertemplate='Faixa: $%{x:,.0f}<br>Contagem: %{y}<extra></extra>'
+            )
         )
-        grafico_hist.update_layout(title_x=0.1)
-        st.plotly_chart(grafico_hist, use_container_width=True)
+
+        fig_hist.update_layout(
+            title='Distribuição de salários anuais',
+            title_x=0.1,
+            margin=dict(l=40, r=80, t=60, b=40),
+            xaxis=dict(title='Faixa salarial (USD)', tickprefix='$', tickformat=',.0f'),
+            yaxis=dict(title='Contagem'),
+            bargap=0.02,
+            height=420
+        )
+
+        st.plotly_chart(fig_hist, use_container_width=True)
     else:
         st.warning('Nenhum dado para exibis no gráfico de distribuição')
 
@@ -118,7 +183,7 @@ with col_graf4:
            locations='residencia_iso3',
            color='usd',
            color_continuous_scale='rdylgn',
-           title='Sãlario médio de Cientista de Dados por país',
+           title='Salário médio de Cientista de Dados por país',
            labels={'usd': 'Salário médio (USD)', 'residencia_iso3': 'País'})
         grafico_paises.update_layout(title_x=0.1)
         st.plotly_chart(grafico_paises, use_container_width=True)
@@ -126,4 +191,10 @@ with col_graf4:
         st.warning('Nenhum dado para exibir no gráfico de países')
 
 st.subheader('Dados Detalhados')
+df_filtrado = df_filtrado.drop(columns=['residencia', 'empresa'])
+colunas = [
+    'Ano', 'Senioridade', 'Tipo de Contrato', 'Cargo',
+    'Salário', 'Moeda', 'USD', 'Tipo', 'Tamanho da Empresa', 'País'
+]
+df_filtrado.columns = colunas
 st.dataframe(df_filtrado)
